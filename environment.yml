@@ -1,0 +1,19 @@
+name: paxbench
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - scikit-learn
+  - pip:
+      - torch>=2.1
+      - transformers>=4.40
+      - accelerate>=0.28
+      - peft>=0.10
+      - safetensors>=0.4
+      - huggingface_hub>=0.23
+      - multimolecule>=0.0.5
+      - einops
+      - -e .
