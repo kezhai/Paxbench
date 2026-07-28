@@ -10,7 +10,7 @@ conda activate paxbench
 pip install -e .
 ```
 
-This environment is for ESM, CaLM, mRNABERT, embedding + ML, zero-shot, LoRA, and evaluation.
+This environment supports ESM2, ESMC, CaLM, DNABERT2, mRNABERT, embedding + ML, zero-shot, LoRA, and evaluation.
 
 Evo2 must be installed and run in a separate Linux CUDA environment. Follow the official Evo2 full install instructions from [ArcInstitute/evo2](https://github.com/ArcInstitute/evo2#installation):
 
@@ -24,9 +24,9 @@ pip install -e .
 
 Keep the environments separate:
 
-- Use `paxbench` for `esm`, `calm`, and `mrnabert`.
-- Use the Evo2 environment only for `--models evo2`.
-- Run the same Paxbench CLI from the relevant activated environment; do not mix Evo2 dependencies into the base `paxbench` environment.
+- Use `paxbench` for ESM2, ESMC, CaLM, DNABERT2, and mRNABERT.
+- Use the Evo2 environment only for Evo2 commands.
+- Run the same Paxbench CLI from the relevant activated environment.
 
 ## Benchmark Schema
 
@@ -39,15 +39,14 @@ Core fields:
 - `protein_sequence`
 - `cds_sequence`
 - `mrna_sequence`
-- `cdna_sequence`
 - `log10_abundance`
-- split columns: `split_species`, `split_homology`, `split_highlow`, `split_random`, `split_fungi2fungi`, `split_fungirandom`, `split_cluster`, `split_species2`, `split_species3`
+- released random, cluster, species, fungi, and abundance split columns
 
 Identifier mapping and source metadata are stored separately under `data/metadata/`, keyed by `paxbench_id`.
 
 ## Run Models
 
-Use one command to run any number of models and any combination of the three benchmark modes:
+The benchmark runner is the entry point for individual models:
 
 ```bash
 python scripts/run_benchmark.py \
@@ -62,42 +61,57 @@ python scripts/run_benchmark.py \
 Modes:
 
 - `embedding`: model embedding extraction followed by Ridge or MLP.
-- `zeroshot`: masked-marginal zero-shot scoring.
-- `lora`: LoRA finetuning for abundance regression.
+- `zeroshot`: sequence likelihood scoring without abundance supervision.
+- `lora`: LoRA fine-tuning for abundance regression.
 
-The command writes per-run outputs plus a single score table:
+Frozen-embedding regressors fit preprocessing and prediction components using the training partition.
 
-```text
-results/demo/scores.tsv
-```
+## Reproduce
 
-Score tables report RMSE, MAE, Spearman, Pearson, and row count. R2 is intentionally not reported.
-
-## Demo Command
-
-The complete demo shell script runs all three benchmark modes across all four model names:
+`scripts/reproduce.py` reproduces the path from model representations to the reported fusion tables. The bundled demo uses fixed train, validation, and test assignments.
 
 ```bash
-bash scripts/run_demo_all.sh
+python scripts/reproduce.py
 ```
 
-Equivalent explicit form:
+The command extracts or reuses ESM2, CaLM, and mRNABERT representations, constructs every supported single-model and cross-level fusion set, runs Ridge and MLP with three seeds, selects the best configuration by mean validation Spearman, and evaluates the locked configuration on test. The 36-row demo verifies the code path; its metrics are not benchmark estimates.
+
+Five files are written to `data/results/demo/`:
+
+- `fusion_sets.tsv`: model combinations, molecular levels, dimensions, and coverage.
+- `runs.tsv`: every combination, learner, seed, partition, and metric.
+- `repeated_results.tsv`: three-seed means and standard deviations.
+- `validation_selection.tsv`: configurations selected using validation only.
+- `results.tsv`: locked test results used to regenerate the main comparison.
+
+The full benchmark uses the same command with the released table and split columns:
 
 ```bash
-bash scripts/run_demo_all.sh data/demo/paxbench_demo.tsv results/demo
+python scripts/reproduce.py \
+  --data data/paxbench_tracka.pkl \
+  --output-dir data/results/paper \
+  --models esm calm evo2 mrnabert \
+  --split-columns split_random split_cluster split_species \
+                  split_species2 split_species3 split_fungirandom \
+                  split_fungi2fungi split_highlow
 ```
 
-## Model Modules
+Model representations are aligned by `paxbench_id` and concatenated for fusion. Extract the Evo2 representation once in the separate Evo2 environment before running the command above:
 
-Paxbench exposes three model modules through the same runner:
+```bash
+python scripts/embed.py \
+  --model evo2 \
+  --data data/paxbench_tracka.pkl \
+  --output .cache/paxbench/representations/evo2.npz
+```
 
-- Model embedding extraction + Ridge/MLP: `--modes embedding --learners ridge mlp`
-- LoRA finetuning: `--modes lora`
-- Model zero-shot: `--modes zeroshot`
+The same frozen-representation pipeline supports ESM2, ESMC 300M, ESMC 600M,
+CaLM, Evo2, DNABERT2 on CDS or mRNA, and mRNABERT. Passing these names through
+`--models` makes `scripts/reproduce.py` construct all valid cross-level
+combinations before applying the same three-repeat aggregation and validation
+selection.
 
-LoRA can run on CPU for small demo checks, but CUDA is recommended. Evo2 requires its separate Evo2/Vortex/Savanna CUDA stack.
-
-
+Zero-shot and LoRA are available through `scripts/run_benchmark.py`.
 
 ## License
 

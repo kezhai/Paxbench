@@ -1,0 +1,8 @@
+sample_scope	feature_set	models	sequence_levels	model_dimensions	concatenated_dimension	n_observations	sample_policy
+paper	esm	esm	protein	esm:1280	1280	36	available for this feature set
+paper	calm	calm	cds_codon	calm:768	768	36	available for this feature set
+paper	mrnabert	mrnabert	mrna	mrnabert:768	768	36	available for this feature set
+paper	esm+calm	esm+calm	protein+cds_codon	esm:1280;calm:768	2048	36	available for this feature set
+paper	esm+mrnabert	esm+mrnabert	protein+mrna	esm:1280;mrnabert:768	2048	36	available for this feature set
+paper	calm+mrnabert	calm+mrnabert	cds_codon+mrna	calm:768;mrnabert:768	1536	36	available for this feature set
+paper	esm+calm+mrnabert	esm+calm+mrnabert	protein+cds_codon+mrna	esm:1280;calm:768;mrnabert:768	2816	36	available for this feature set

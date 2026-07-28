@@ -23,11 +23,15 @@ from .metrics import regression_metrics
 from .utils import ensure_dir, write_json
 
 
-def make_regressor(learner: str):
+def make_regressor(learner: str, *, seed: int = 42):
     if learner == "ridge":
         estimator = Ridge(alpha=1.0)
     elif learner == "mlp":
-        estimator = MLPRegressor(hidden_layer_sizes=(64,), max_iter=500, random_state=42)
+        estimator = MLPRegressor(
+            hidden_layer_sizes=(64,),
+            max_iter=500,
+            random_state=seed,
+        )
     else:
         raise ValueError("learner must be 'ridge' or 'mlp'")
     return make_pipeline(SimpleImputer(strategy="median"), StandardScaler(), estimator)
@@ -60,6 +64,7 @@ def fit_frozen_ml(
     split_column: str = DEFAULT_SPLIT_COLUMN,
     id_column: str = DEFAULT_ID_COLUMN,
     learner: str = "ridge",
+    seed: int = 42,
 ) -> tuple[pd.DataFrame, dict[str, dict[str, float]]]:
     validate_table(frame, id_column=id_column, target_column=target_column, split_column=split_column)
     train, validation, test = split_frame(frame, split_column=split_column)
@@ -68,7 +73,7 @@ def fit_frozen_ml(
     _, x_test = extract_sequence_feature_embeddings(test, model=model, id_column=id_column)
     y_train = pd.to_numeric(train[target_column], errors="coerce").to_numpy(dtype=float)
 
-    regressor = make_regressor(learner)
+    regressor = make_regressor(learner, seed=seed)
     regressor.fit(x_train, y_train)
 
     predictions = []
@@ -103,6 +108,7 @@ def fit_embedding_ml(
     split_column: str = DEFAULT_SPLIT_COLUMN,
     id_column: str = DEFAULT_ID_COLUMN,
     learner: str = "ridge",
+    seed: int = 42,
 ) -> dict[str, dict[str, float]]:
     frame = read_table(data)
     if id_column not in frame.columns and "paxbench_id" in frame.columns:
@@ -118,7 +124,7 @@ def fit_embedding_ml(
     split_values = merged[split_column].astype(str).to_numpy()
 
     train_mask = split_values == "train"
-    regressor = make_regressor(learner)
+    regressor = make_regressor(learner, seed=seed)
     regressor.fit(x_all[train_mask], y_all[train_mask])
 
     rows = []

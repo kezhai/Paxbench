@@ -37,7 +37,9 @@ def run_mode(
     epochs: int,
     learner: str,
 ) -> dict[str, object]:
-    output = output_root / mode / (f"{model}_{learner}" if mode == "embedding" else model)
+    output = output_root / mode / split_column / (
+        f"{model}_{learner}" if mode == "embedding" else model
+    )
     if mode == "embedding":
         embedding_path = output_root / "embeddings" / f"{model}.npz"
         run_embedding_cli(
@@ -70,6 +72,8 @@ def run_mode(
             data=data,
             output=output,
             model=model,
+            target_column=target_column,
+            split_column=split_column,
             epochs=epochs,
             limit_rows=limit_rows,
         )

@@ -1,0 +1,2 @@
+split_column	calm_spearman	calm_sd	calm_n	calm_configuration	esm_spearman	esm_sd	esm_n	esm_configuration	mrnabert_spearman	mrnabert_sd	mrnabert_n	mrnabert_configuration	best_2_level_spearman	best_2_level_sd	best_2_level_n	best_2_level_configuration	best_3_level_spearman	best_3_level_sd	best_3_level_n	best_3_level_configuration
+split_species	-0.5	0.0	3	calm|ridge	-0.5	0.0	3	esm|ridge	-0.5	0.0	3	mrnabert|ridge	-0.5	0.0	3	esm+mrnabert|ridge	-0.3333333333333333	1.1547005383792517	3	esm+calm+mrnabert|mlp

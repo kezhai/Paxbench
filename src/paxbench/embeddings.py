@@ -56,6 +56,7 @@ def run_embedding_cli(
     model_name: str | None = None,
     batch_size: int = 2,
     max_length: int = 512,
+    max_sequence_length: int | None = None,
 ) -> Path:
     from .model_backends import extract_model_embeddings
 
@@ -67,5 +68,6 @@ def run_embedding_cli(
         id_column=id_column,
         batch_size=batch_size,
         max_length=max_length,
+        max_sequence_length=max_sequence_length,
         limit_rows=limit_rows,
     )

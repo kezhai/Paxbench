@@ -78,7 +78,16 @@ def load_mrnabert_model(
     config.hidden_dropout_prob = max(float(getattr(config, "hidden_dropout_prob", 0.0)), 0.1)
     with disable_mrnabert_flash_attention():
         model = model_class.from_config(config, trust_remote_code=True)
-        missing_keys, unexpected_keys = model.load_state_dict(load_checkpoint_state_dict(model_name), strict=False)
+        state_dict = load_checkpoint_state_dict(model_name)
+        model_keys = set(model.state_dict())
+        direct_matches = len(model_keys.intersection(state_dict))
+        stripped = {
+            key.removeprefix("bert."): value
+            for key, value in state_dict.items()
+        }
+        if len(model_keys.intersection(stripped)) > direct_matches:
+            state_dict = stripped
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
     print(
         f"[model] mRNABERT manual checkpoint load missing={len(missing_keys)} unexpected={len(unexpected_keys)}",
         flush=True,
@@ -139,24 +148,38 @@ def model_sequence_frame(
     target_column: str = DEFAULT_TARGET_COLUMN,
     split_column: str = DEFAULT_SPLIT_COLUMN,
     limit_rows: int | None = None,
+    max_sequence_length: int | None = None,
 ) -> pd.DataFrame:
     spec = get_model_spec(model)
     frame = read_table(data).copy()
     if model == "mrnabert":
-        if "cdna_sequence" not in frame.columns or "cds_sequence" not in frame.columns:
-            raise ValueError("mrnabert requires columns 'cdna_sequence' and 'cds_sequence'")
+        if "mrna_sequence" not in frame.columns or "cds_sequence" not in frame.columns:
+            raise ValueError("mrnabert requires columns 'mrna_sequence' and 'cds_sequence'")
+        frame["_raw_sequence_length"] = frame["mrna_sequence"].map(
+            lambda value: len(clean_nucleotide_sequence(value))
+        )
         frame["mrnabert_sequence"] = [
-            make_mrnabert_sequence(cdna, cds)
-            for cdna, cds in zip(frame["cdna_sequence"], frame["cds_sequence"])
+            make_mrnabert_sequence(mrna, cds)
+            for mrna, cds in zip(frame["mrna_sequence"], frame["cds_sequence"])
         ]
     if spec.sequence_column not in frame.columns:
         raise ValueError(f"{model} requires column {spec.sequence_column!r}")
-    frame[spec.sequence_column] = frame[spec.sequence_column].map(clean_sequence)
+    if model == "mrnabert":
+        frame[spec.sequence_column] = frame[spec.sequence_column].fillna("").astype(str).str.strip()
+    else:
+        frame[spec.sequence_column] = frame[spec.sequence_column].map(clean_sequence)
     frame[target_column] = pd.to_numeric(frame[target_column], errors="coerce")
     frame = frame.dropna(subset=[target_column, split_column]).copy()
     frame = frame[frame[spec.sequence_column] != ""].copy()
     if model == "calm":
         frame = frame[frame[spec.sequence_column].str.len() % 3 == 0].copy()
+    if max_sequence_length is not None:
+        lengths = (
+            frame["_raw_sequence_length"]
+            if model == "mrnabert"
+            else frame[spec.sequence_column].str.len()
+        )
+        frame = frame[lengths <= max_sequence_length].copy()
     if limit_rows is not None:
         frame = frame.head(limit_rows).copy()
     if frame.empty:
@@ -168,18 +191,18 @@ def clean_nucleotide_sequence(value: object) -> str:
     return clean_sequence(value, RNA_ALPHABET).replace("U", "T")
 
 
-def make_mrnabert_sequence(cdna: object, cds: object) -> str:
-    cdna_seq = clean_nucleotide_sequence(cdna)
+def make_mrnabert_sequence(mrna: object, cds: object) -> str:
+    mrna_seq = clean_nucleotide_sequence(mrna)
     cds_seq = clean_nucleotide_sequence(cds)
-    if not cdna_seq or not cds_seq:
+    if not mrna_seq or not cds_seq:
         return ""
-    start = cdna_seq.find(cds_seq)
+    start = mrna_seq.find(cds_seq)
     if start < 0:
         return ""
     end = start + len(cds_seq)
-    five_prime = list(cdna_seq[:start])
+    five_prime = list(mrna_seq[:start])
     codons = [cds_seq[i : i + 3] for i in range(0, len(cds_seq) - len(cds_seq) % 3, 3)]
-    three_prime = list(cdna_seq[end:])
+    three_prime = list(mrna_seq[end:])
     return " ".join(token for token in [*five_prime, *codons, *three_prime] if token)
 
 
@@ -197,6 +220,28 @@ def load_tokenizer_and_encoder(model: str, model_name: str | None = None):
         with disable_mrnabert_flash_attention():
             tokenizer = AutoTokenizer.from_pretrained(resolved, trust_remote_code=True)
         encoder = load_mrnabert_model(resolved, AutoModel)
+        return tokenizer, encoder
+    if model.startswith("dnabert2_"):
+        from transformers import AutoConfig
+
+        config = AutoConfig.from_pretrained(resolved, trust_remote_code=True)
+        if float(getattr(config, "attention_probs_dropout_prob", 0.0) or 0.0) == 0.0:
+            config.attention_probs_dropout_prob = 1e-12
+        tokenizer = AutoTokenizer.from_pretrained(resolved, trust_remote_code=True)
+        encoder = AutoModel.from_pretrained(
+            resolved,
+            config=config,
+            trust_remote_code=True,
+            low_cpu_mem_usage=False,
+        )
+        return tokenizer, encoder
+    if model.startswith("esmc_"):
+        tokenizer = AutoTokenizer.from_pretrained(resolved, trust_remote_code=True)
+        encoder = AutoModel.from_pretrained(
+            resolved,
+            trust_remote_code=True,
+            low_cpu_mem_usage=False,
+        )
         return tokenizer, encoder
     return AutoTokenizer.from_pretrained(resolved, trust_remote_code=True), AutoModel.from_pretrained(
         resolved, trust_remote_code=True
@@ -232,6 +277,7 @@ def extract_model_embeddings(
     split_column: str = DEFAULT_SPLIT_COLUMN,
     batch_size: int = 2,
     max_length: int = 512,
+    max_sequence_length: int | None = None,
     limit_rows: int | None = None,
 ) -> Path:
     if model == "evo2":
@@ -242,13 +288,18 @@ def extract_model_embeddings(
             id_column=id_column,
             target_column=target_column,
             split_column=split_column,
-            max_length=max_length,
+            max_length=max_sequence_length or max_length,
             limit_rows=limit_rows,
         )
     torch = require_torch()
     spec = get_model_spec(model)
     frame = model_sequence_frame(
-        data, model=model, target_column=target_column, split_column=split_column, limit_rows=limit_rows
+        data,
+        model=model,
+        target_column=target_column,
+        split_column=split_column,
+        limit_rows=limit_rows,
+        max_sequence_length=max_sequence_length,
     )
     tokenizer, encoder = load_tokenizer_and_encoder(model, model_name)
     device = device_for_inference()
@@ -429,6 +480,7 @@ def run_model_lora(
     epochs: int = 1,
     batch_size: int = 1,
     max_length: int = 512,
+    seed: int = 42,
     limit_rows: int | None = None,
 ) -> Path:
     torch = require_torch()
@@ -437,7 +489,9 @@ def run_model_lora(
         raise NotImplementedError("Evo2 LoRA requires the Evo2/Savanna CUDA backend.")
     _, _, AutoModelForSequenceClassification, AutoTokenizer = require_transformers()
     from peft import LoraConfig, TaskType, get_peft_model
-    from transformers import DataCollatorWithPadding, Trainer, TrainingArguments
+    from transformers import DataCollatorWithPadding, Trainer, TrainingArguments, set_seed
+
+    set_seed(seed)
 
     frame = model_sequence_frame(
         data, model=model, target_column=target_column, split_column=split_column, limit_rows=limit_rows
@@ -498,6 +552,8 @@ def run_model_lora(
         save_strategy="no",
         report_to=[],
         remove_unused_columns=False,
+        seed=seed,
+        data_seed=seed,
     )
     trainer = Trainer(
         model=model_obj,
@@ -523,7 +579,16 @@ def run_model_lora(
     )
     predictions.to_csv(out / "predictions.tsv", sep="\t", index=False)
     metrics = {"test": regression_metrics(predictions[target_column].to_numpy(), predictions["prediction"].to_numpy())}
-    write_json({"model": model, "mode": "lora", "metrics": metrics}, out / "metrics.json")
+    write_json(
+        {
+            "model": model,
+            "mode": "lora",
+            "seed": seed,
+            "split_column": split_column,
+            "metrics": metrics,
+        },
+        out / "metrics.json",
+    )
     pd.DataFrame([{"split": split, **values} for split, values in metrics.items()]).to_csv(
         out / "metrics.tsv", sep="\t", index=False
     )

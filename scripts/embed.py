@@ -4,11 +4,12 @@ from __future__ import annotations
 import argparse
 
 from paxbench.embeddings import run_embedding_cli
+from paxbench.models import MODEL_REGISTRY
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Extract Paxbench embeddings.")
-    parser.add_argument("--model", choices=["esm", "calm", "mrnabert", "evo2"], default="esm")
+    parser.add_argument("--model", choices=tuple(MODEL_REGISTRY), default="esm")
     parser.add_argument("--data", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit-rows", type=int, default=None)

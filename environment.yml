@@ -7,6 +7,8 @@ dependencies:
   - numpy
   - pandas
   - scikit-learn
+  - scipy
+  - matplotlib
   - pip:
       - torch>=2.1
       - transformers>=4.40

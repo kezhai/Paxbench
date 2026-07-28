@@ -19,9 +19,13 @@ def read_table(path: str | Path) -> pd.DataFrame:
         frame = pd.read_csv(path, low_memory=False)
     elif suffix in {".pkl", ".pickle"}:
         frame = pd.read_pickle(path)
+    elif suffix == ".parquet":
+        frame = pd.read_parquet(path)
     elif suffixes := path.suffixes:
         if suffixes[-2:] == [".tsv", ".gz"]:
             frame = pd.read_csv(path, sep="\t", low_memory=False)
+        elif suffixes[-2:] == [".csv", ".gz"]:
+            frame = pd.read_csv(path, low_memory=False)
         else:
             raise ValueError(f"Unsupported table format: {path}")
     else:

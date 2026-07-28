@@ -1,0 +1,6 @@
+split_column	selection_group	selected_feature_set	selected_learner	validation_spearman	test_spearman	test_spearman_std	n_test
+split_species	calm	calm	ridge	0.5	-0.5	0.0	3
+split_species	esm	esm	ridge	0.5	-0.5	0.0	3
+split_species	mrnabert	mrnabert	ridge	0.5	-0.5	0.0	3
+split_species	best_2_level	esm+mrnabert	ridge	0.5	-0.5	0.0	3
+split_species	best_3_level	esm+calm+mrnabert	mlp	0.8333333333333334	-0.3333333333333333	1.1547005383792517	3
