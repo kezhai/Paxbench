@@ -2,6 +2,8 @@
 
 Paxbench is a compact benchmark package for protein abundance prediction. The repository keeps the public evaluation code small: one environment and one benchmark runner.
 
+The full [PaxBench dataset and documentation](https://huggingface.co/datasets/cke2333/Paxbench) are hosted on Hugging Face. The GitHub repository includes a small demo dataset.
+
 ## Install
 
 ```bash
@@ -42,7 +44,7 @@ Core fields:
 - `log10_abundance`
 - released random, cluster, species, fungi, and abundance split columns
 
-Identifier mapping and source metadata are stored separately under `data/metadata/`, keyed by `paxbench_id`.
+Identifier mapping and source metadata are available in the dataset release's `metadata/` directory, keyed by `paxbench_id`.
 
 ## Run Models
 
@@ -52,7 +54,7 @@ The benchmark runner is the entry point for individual models:
 python scripts/run_benchmark.py \
   --data data/demo/paxbench_demo.tsv \
   --output results/demo \
-  --models esm calm mrnabert evo2 \
+  --models esm calm mrnabert \
   --modes embedding zeroshot lora \
   --learners ridge mlp \
   --epochs 1
@@ -65,6 +67,8 @@ Modes:
 - `lora`: LoRA fine-tuning for abundance regression.
 
 Frozen-embedding regressors fit preprocessing and prediction components using the training partition.
+
+Run Evo2 separately in its Linux CUDA environment. This repository provides Evo2 embedding extraction and zero-shot scoring, but not Evo2 LoRA. Model weights are downloaded on first use unless already cached.
 
 ## Reproduce
 
@@ -84,11 +88,15 @@ Five files are written to `data/results/demo/`:
 - `validation_selection.tsv`: configurations selected using validation only.
 - `results.tsv`: locked test results used to regenerate the main comparison.
 
-The full benchmark uses the same command with the released table and split columns:
+Download the released table to run the full benchmark. Use a separate representation cache from the demo:
 
 ```bash
+curl -fL https://huggingface.co/datasets/cke2333/Paxbench/resolve/main/paxbench_tracka.csv.gz \
+  -o data/paxbench_tracka.csv.gz
+
 python scripts/reproduce.py \
-  --data data/paxbench_tracka.pkl \
+  --data data/paxbench_tracka.csv.gz \
+  --cache-dir .cache/paxbench/full \
   --output-dir data/results/paper \
   --models esm calm evo2 mrnabert \
   --split-columns split_random split_cluster split_species \
@@ -101,9 +109,12 @@ Model representations are aligned by `paxbench_id` and concatenated for fusion. 
 ```bash
 python scripts/embed.py \
   --model evo2 \
-  --data data/paxbench_tracka.pkl \
-  --output .cache/paxbench/representations/evo2.npz
+  --data data/paxbench_tracka.csv.gz \
+  --max-length 1024 \
+  --output .cache/paxbench/full/representations/evo2.npz
 ```
+
+Run the Evo2 extraction before the full benchmark command. Reuse an embedding cache only for the same input table and extraction settings.
 
 The same frozen-representation pipeline supports ESM2, ESMC 300M, ESMC 600M,
 CaLM, Evo2, DNABERT2 on CDS or mRNA, and mRNABERT. Passing these names through
@@ -112,6 +123,8 @@ combinations before applying the same three-repeat aggregation and validation
 selection.
 
 Zero-shot and LoRA are available through `scripts/run_benchmark.py`.
+
+The released table includes the benchmark splits. To audit sequence identity across a split, install MMseqs2 and see `python scripts/split_audit.py --help`.
 
 ## License
 
